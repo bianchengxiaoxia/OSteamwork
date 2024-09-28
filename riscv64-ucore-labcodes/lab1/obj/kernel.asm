@@ -60,14 +60,13 @@ int kern_init(void) {
     // rdtime in mbare mode crashes
     clock_init();  // init clock interrupt
     80200046:	0ee000ef          	jal	ra,80200134 <clock_init>
-    
-    intr_enable();  // enable irq interrupt
-    8020004a:	136000ef          	jal	ra,80200180 <intr_enable>
-// 插入 mret 触发非法指令异常
+    asm volatile("mret");
+    8020004a:	30200073          	mret
     asm volatile("ebreak");
     8020004e:	9002                	ebreak
-    asm volatile("mret");
-    80200050:	30200073          	mret
+    intr_enable();  // enable irq interrupt
+    80200050:	130000ef          	jal	ra,80200180 <intr_enable>
+
     while (1)
     80200054:	a001                	j	80200054 <kern_init+0x4a>
 
@@ -643,7 +642,7 @@ void exception_handler(struct trapframe *tf) {
              *(2)输出异常指令地址
              *(3)更新 tf->epc寄存器
             */
-            cprintf("Exception type:Illegal instruction");
+            cprintf("Exception type:Illegal instruction\n");
     80200490:	00001517          	auipc	a0,0x1
     80200494:	b0850513          	addi	a0,a0,-1272 # 80200f98 <etext+0x570>
     80200498:	bd9ff0ef          	jal	ra,80200070 <cprintf>
@@ -676,7 +675,7 @@ void exception_handler(struct trapframe *tf) {
     802004ca:	0141                	addi	sp,sp,16
             print_trapframe(tf);
     802004cc:	bd61                	j	80200364 <print_trapframe>
-           cprintf("Exception type: breakpoint");
+           cprintf("Exception type: breakpoint\n");
     802004ce:	00001517          	auipc	a0,0x1
     802004d2:	b1a50513          	addi	a0,a0,-1254 # 80200fe8 <etext+0x5c0>
     802004d6:	b9bff0ef          	jal	ra,80200070 <cprintf>

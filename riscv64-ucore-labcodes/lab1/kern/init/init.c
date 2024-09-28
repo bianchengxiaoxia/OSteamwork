@@ -30,11 +30,10 @@ int kern_init(void) {
 
     // rdtime in mbare mode crashes
     clock_init();  // init clock interrupt
-
-    intr_enable();  // enable irq interrupt
-// 插入 mret 触发非法指令异常和插入 ebreak 触发断点异常
-    asm volatile("ebreak");
     asm volatile("mret");
+    asm volatile("ebreak");
+    intr_enable();  // enable irq interrupt
+
     while (1)
         ;
 }
