@@ -114,14 +114,14 @@ void interrupt_handler(struct trapframe *tf) {
             */
             clock_set_next_event();
             ticks++;
-            if(ticks==100)
+            if(ticks%100==0)
             {
                 print_ticks();
                 num++;
             }
             if(num==10)
             {
-                shutdown();
+                sbi_shutdown();
 
             }
             break;
