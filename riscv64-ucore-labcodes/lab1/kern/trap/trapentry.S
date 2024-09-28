@@ -102,13 +102,18 @@
 .align(2)
 __alltraps:
     SAVE_ALL
-
     move  a0, sp
     jal trap
+    # 插入非法指令 mret，触发非法指令异常
+    #mret
     # sp should be the same as before "jal trap"
 
     .globl __trapret
 __trapret:
     RESTORE_ALL
+
+    # 插入断点异常 ebreak，触发断点异常
+    #ebreak
+
     # return from supervisor call
     sret
