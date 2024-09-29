@@ -87,7 +87,7 @@ clear *0x80200000
 
 首先使用上述命令查看并删除断点。
 
-然后使用continue继续运行得到结果，结果显示正确。![image-20240928114239383](C:\Users\XYN\AppData\Roaming\Typora\typora-user-images\image-20240928114239383.png)
+然后使用continue继续运行得到结果，结果显示正确。![image-20240928114239383](image-20240928114239383.png)
 
 #### 重要知识点
 
@@ -228,7 +228,7 @@ case IRQ_S_TIMER:
 
 实验结果如下：
 
-![image-20240929092609494](C:\Users\XYN\AppData\Roaming\Typora\typora-user-images\image-20240929092609494.png)
+![image-20240929092609494](image-20240929092609494.png)
 
 #### 扩展练习 Challenge1：描述与理解中断流程
 
@@ -331,7 +331,7 @@ asm volatile("ebreak");
 
 运行后的结果图如下：
 
-![image-20240929091407282](C:\Users\XYN\AppData\Roaming\Typora\typora-user-images\image-20240929091407282.png)
+![image-20240929091407282](image-20240929091407282.png)
 
 ### 本实验中重要的知识点及其与OS原理的对应关系
 
