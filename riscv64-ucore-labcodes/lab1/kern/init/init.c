@@ -25,16 +25,15 @@ int kern_init(void) {
     print_kerninfo();
 
     // grade_backtrace();
-
     idt_init();  // init interrupt descriptor table
-
     // rdtime in mbare mode crashes
     clock_init();  // init clock interrupt
+    intr_enable();  // enable irq interrupt//启用中断，使系统可以响应外部中断（如时钟中断、设备中断等
     asm volatile("mret");
     asm volatile("ebreak");
-    intr_enable();  // enable irq interrupt
-
     while (1)
+    // asm volatile("mret");
+    // asm volatile("ebreak");
         ;
 }
 
