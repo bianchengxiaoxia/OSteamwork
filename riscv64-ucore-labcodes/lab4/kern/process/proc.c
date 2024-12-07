@@ -183,8 +183,28 @@ proc_run(struct proc_struct *proc) {
         *   lcr3():                   Modify the value of CR3 register
         *   switch_to():              Context switching between two processes
         */
-       
+        bool intr_flag;
+        struct proc_struct *prev = current, *next = proc;
+
+        local_intr_save(intr_flag);
+        {
+            // 禁用中断
+            if (prev->state == PROC_RUNNABLE) {
+                // 如果当前进程处于可运行状态，则将其状态设置为 PROC_RUNNABLE，
+                // 表示可以被再次调度
+                prev->state = PROC_RUNNABLE;
+            }
+            // 切换当前进程为要运行的进程
+            current = proc;
+            next->context.sp = next->kstack + KSTACKSIZE;
+            // 切换页表，使用新进程的地址空间
+            lcr3(proc->cr3);
+            switch_to(&(prev->context), &(next->context));
+        }
+        local_intr_restore(intr_flag);
+
     }
+    
 }
 
 // forkret -- the first kernel entry point of a new thread/process
@@ -319,10 +339,14 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     if(copy_mm(clone_flags,proc)!=0)goto bad_fork_cleanup_kstack;
     copy_thread(proc,stack,tf);
 
+    bool trap_flag;
+    local_intr_save(trap_flag);{
     proc->pid = get_pid();
     nr_process ++;
     list_add(&proc_list ,&(proc->list_link));//list_add(&proc_list ,&(*proc).list_link);
     hash_proc(proc);
+    }
+    local_intr_restore(trap_flag);
     wakeup_proc(proc);
     ret = proc->pid;
    

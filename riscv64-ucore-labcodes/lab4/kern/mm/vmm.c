@@ -372,21 +372,27 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
         */
         if (swap_init_ok) {
             struct Page *page = NULL;
-            // 你要编写的内容在这里，请基于上文说明以及下文的英文注释完成代码编写
-            //(1）According to the mm AND addr, try
-            //to load the content of right disk page
-            //into the memory which page managed.
-            //(2) According to the mm,
-            //addr AND page, setup the
-            //map of phy addr <--->
-            //logical addr
-            //(3) make the page swappable.
-            page->pra_vaddr = addr;
+            // (1) 根据 mm 和 addr，尝试将相应磁盘页的内容加载到由 page 管理的内存中
+            if (swap_in(mm, addr, &page) == 0) {
+                // (2) 根据 mm，addr 和 page 建立物理地址与逻辑地址之间的映射
+                if (page_insert(mm->pgdir, page, addr, perm) == 0) {
+                    // (3) 设置页面为可交换
+                    swap_map_swappable(mm, addr, page, 1);
+                    page->pra_vaddr = addr;
+                } else {
+                    cprintf("page_insert failed for addr 0x%x\n", addr);
+                    goto failed;
+                }
+            } else {
+                // 如果从交换区加载失败，返回错误
+                cprintf("swap_in failed for addr 0x%x\n", addr);
+                goto failed;
+            }
         } else {
             cprintf("no swap_init_ok but ptep is %x, failed\n", *ptep);
             goto failed;
         }
-   }
+    }
 
    ret = 0;
 failed:
