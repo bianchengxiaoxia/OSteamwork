@@ -162,112 +162,108 @@ static void *boot_alloc_page(void) {
     return page2kva(p);
 }
 
-// pmm_init - setup a pmm to manage physical memory, build PDT&PT to setup
-// paging mechanism
-//         - check the correctness of pmm & paging mechanism, print PDT&PT
+// pmm_init - 设置物理内存管理器 (PMM) 来管理物理内存，构建页目录表 (PDT) 和页表 (PT) 以设置分页机制
+//         - 检查物理内存管理器和分页机制的正确性，并打印页目录表和页表
 void pmm_init(void) {
-    // We need to alloc/free the physical memory (granularity is 4KB or other
-    // size).
-    // So a framework of physical memory manager (struct pmm_manager)is defined
-    // in pmm.h
-    // First we should init a physical memory manager(pmm) based on the
-    // framework.
-    // Then pmm can alloc/free the physical memory.
-    // Now the first_fit/best_fit/worst_fit/buddy_system pmm are available.
+    // 我们需要分配和释放物理内存（粒度为 4KB 或其他大小）。
+    // 因此在 pmm.h 中定义了一个物理内存管理器框架 (struct pmm_manager)。
+    // 首先，我们应该基于该框架初始化一个物理内存管理器 (pmm) 实例。
+    // 然后 pmm 就可以用来分配和释放物理内存。
+    // 目前可用的内存管理策略有：首次适应 (first_fit)、最佳适应 (best_fit)、最坏适应 (worst_fit) 和伙伴系统 (buddy_system)。
     init_pmm_manager();
 
-    // detect physical memory space, reserve already used memory,
-    // then use pmm->init_memmap to create free page list
+    // 检测物理内存空间，并保留已经使用的内存。
+    // 然后使用 pmm->init_memmap 初始化空闲页列表。
     page_init();
 
-    // use pmm->check to verify the correctness of the alloc/free function in a
-    // pmm
+    // 使用 pmm->check 函数来验证物理内存管理器中的内存分配和释放功能的正确性
     check_alloc_page();
-    // create boot_pgdir, an initial page directory(Page Directory Table, PDT)
+
+    // 创建 boot_pgdir，作为初始页目录表 (Page Directory Table, PDT)
     extern char boot_page_table_sv39[];
-    boot_pgdir = (pte_t*)boot_page_table_sv39;
-    boot_cr3 = PADDR(boot_pgdir);
-    check_pgdir();
+    boot_pgdir = (pte_t*)boot_page_table_sv39;  // 将初始页目录表地址赋值给 boot_pgdir
+    boot_cr3 = PADDR(boot_pgdir);  // 获取页目录表的物理地址并赋值给 boot_cr3
+    check_pgdir();  // 检查页目录的正确性
+
+    // 检查内核基地址和内核顶地址是否是页大小的整数倍
     static_assert(KERNBASE % PTSIZE == 0 && KERNTOP % PTSIZE == 0);
 
-    // map all physical memory to linear memory with base linear addr KERNBASE
-    // linear_addr KERNBASE~KERNBASE+KMEMSIZE = phy_addr 0~KMEMSIZE
-    // But shouldn't use this map until enable_paging() & gdt_init() finished.
+    // 将所有物理内存映射为从 KERNBASE 开始的线性内存地址
+    // 线性地址 KERNBASE~(KERNBASE+KMEMSIZE) = 物理地址 0~KMEMSIZE
+    // 但在 enable_paging() 和 gdt_init() 完成之前，不应使用此映射。
     //boot_map_segment(boot_pgdir, KERNBASE, KMEMSIZE, PADDR(KERNBASE),
-     //                READ_WRITE_EXEC);
+    //                 READ_WRITE_EXEC);
 
-    // temporary map:
-    // virtual_addr 3G~3G+4M = linear_addr 0~4M = linear_addr 3G~3G+4M =
-    // phy_addr 0~4M
+    // 临时映射：
+    // 虚拟地址 3G~3G+4M = 线性地址 0~4M = 线性地址 3G~3G+4M = 物理地址 0~4M
     // boot_pgdir[0] = boot_pgdir[PDX(KERNBASE)];
 
-    //    enable_paging();
+    // enable_paging();  // 启用分页（这部分代码被注释掉，可能是因为初始化未完成）
 
-    // now the basic virtual memory map(see memalyout.h) is established.
-    // check the correctness of the basic virtual memory map.
+    // 现在基本的虚拟内存映射（见 memlayout.h）已经建立。
+    // 检查基本虚拟内存映射的正确性。
     check_boot_pgdir();
-
 }
 
-// get_pte - get pte and return the kernel virtual address of this pte for la
-//        - if the PT contians this pte didn't exist, alloc a page for PT
-// parameter:
-//  pgdir:  the kernel virtual base address of PDT
-//  la:     the linear address need to map
-//  create: a logical value to decide if alloc a page for PT
-// return vaule: the kernel virtual address of this pte
+
+// get_pte - 获取与线性地址 la 对应的页表项 (PTE)，并返回该 PTE 的内核虚拟地址
+//           - 如果对应页表（Page Table，PT）不存在，需要根据 create 参数决定是否为 PT 分配一个页框
+// 参数：
+//  pgdir:  页目录表（Page Directory Table，PDT）的内核虚拟基地址
+//  la:     需要映射的线性地址
+//  create: 是否创建新页表的逻辑值，若为 true 则表示需要分配页表
+// 返回值：
+//  返回与线性地址 la 对应的页表项（PTE）的内核虚拟地址
 pte_t *get_pte(pde_t *pgdir, uintptr_t la, bool create) {
     /*
+     * 如果需要访问物理地址，建议使用 KADDR() 函数转换物理地址为内核虚拟地址
+     * 请阅读 pmm.h 中提供的各种宏，了解如何使用它们
      *
-     * If you need to visit a physical address, please use KADDR()
-     * please read pmm.h for useful macros
-     *
-     * Maybe you want help comment, BELOW comments can help you finish the code
-     *
-     * Some Useful MACROs and DEFINEs, you can use them in below implementation.
-     * MACROs or Functions:
-     *   PDX(la) = the index of page directory entry of VIRTUAL ADDRESS la.
-     *   KADDR(pa) : takes a physical address and returns the corresponding
-     * kernel virtual address.
-     *   set_page_ref(page,1) : means the page be referenced by one time
-     *   page2pa(page): get the physical address of memory which this (struct
-     * Page *) page  manages
-     *   struct Page * alloc_page() : allocation a page
-     *   memset(void *s, char c, size_t n) : sets the first n bytes of the
-     * memory area pointed by s
-     *                                       to the specified value c.
-     * DEFINEs:
-     *   PTE_P           0x001                   // page table/directory entry
-     * flags bit : Present
-     *   PTE_W           0x002                   // page table/directory entry
-     * flags bit : Writeable
-     *   PTE_U           0x004                   // page table/directory entry
-     * flags bit : User can access
+     * 以下是一些有用的宏和定义，它们可以帮助完成该代码：
+     * 宏或函数：
+     *   PDX(la)：获取虚拟地址 la 的页目录项索引。
+     *   KADDR(pa)：将物理地址转换为内核虚拟地址。
+     *   set_page_ref(page, 1)：设置页引用计数为 1。
+     *   page2pa(page)：获取指定 (struct Page *) page 管理的内存的物理地址。
+     *   struct Page *alloc_page()：分配一个页框。
+     *   memset(void *s, char c, size_t n)：将 s 指向的内存区域的前 n 个字节设置为字符 c。
+     * 定义：
+     *   PTE_P           0x001  // 页表项/页目录项标志位：Present，表示是否存在
+     *   PTE_W           0x002  // 页表项/页目录项标志位：Writeable，可写
+     *   PTE_U           0x004  // 页表项/页目录项标志位：User 可访问
      */
+
+    // 第一级页目录项
     pde_t *pdep1 = &pgdir[PDX1(la)];
+    // 检查第一级页目录项是否有效 (即是否存在页表)
     if (!(*pdep1 & PTE_V)) {
+        // 如果第一级页目录项无效，且 create 参数为 true，则分配一个新的页框来存储页表
         struct Page *page;
         if (!create || (page = alloc_page()) == NULL) {
-            return NULL;
+            return NULL;  // 如果 create 为 false 或分配页框失败，返回 NULL
         }
-        set_page_ref(page, 1);
-        uintptr_t pa = page2pa(page);
-        memset(KADDR(pa), 0, PGSIZE);
-        *pdep1 = pte_create(page2ppn(page), PTE_U | PTE_V);
+        set_page_ref(page, 1);  // 设置页引用计数为 1，表示它被使用
+        uintptr_t pa = page2pa(page);  // 获取页框的物理地址
+        memset(KADDR(pa), 0, PGSIZE);  // 将页表页的内存清零
+        *pdep1 = pte_create(page2ppn(page), PTE_U | PTE_V);  // 创建页目录项，使其指向页表，并设置权限为用户可访问及有效
     }
+
+    // 获取第二级页目录项的地址 (根据第一级页目录项地址和 la)
     pde_t *pdep0 = &((pde_t *)KADDR(PDE_ADDR(*pdep1)))[PDX0(la)];
-//    pde_t *pdep0 = &((pde_t *)(PDE_ADDR(*pdep1)))[PDX0(la)];
+    // 检查第二级页目录项是否有效 (即是否存在页表项)
     if (!(*pdep0 & PTE_V)) {
-    	struct Page *page;
-    	if (!create || (page = alloc_page()) == NULL) {
-    		return NULL;
-    	}
-    	set_page_ref(page, 1);
-    	uintptr_t pa = page2pa(page);
-    	memset(KADDR(pa), 0, PGSIZE);
- //   	memset(pa, 0, PGSIZE);
-    	*pdep0 = pte_create(page2ppn(page), PTE_U | PTE_V);
+        // 如果第二级页目录项无效，且 create 参数为 true，则分配一个新的页框来存储页表项
+        struct Page *page;
+        if (!create || (page = alloc_page()) == NULL) {
+            return NULL;  // 如果 create 为 false 或分配页框失败，返回 NULL
+        }
+        set_page_ref(page, 1);  // 设置页引用计数为 1，表示它被使用
+        uintptr_t pa = page2pa(page);  // 获取页框的物理地址
+        memset(KADDR(pa), 0, PGSIZE);  // 将页表项页的内存清零
+        *pdep0 = pte_create(page2ppn(page), PTE_U | PTE_V);  // 创建页目录项，使其指向页表项，并设置权限为用户可访问及有效
     }
+
+    // 获取最终的页表项地址，并返回其内核虚拟地址
     return &((pte_t *)KADDR(PDE_ADDR(*pdep0)))[PTX(la)];
 }
 

@@ -327,109 +327,97 @@ volatile unsigned int pgfault_num=0;
  *         -- The U/S flag (bit 2) indicates whether the processor was executing at user mode (1)
  *            or supervisor mode (0) at the time of the exception.
  */
-int
-do_pgfault(struct mm_struct *mm, uint_t error_code, uintptr_t addr) {
+// do_pgfault - 中断处理程序，用于处理页故障异常
+// @mm         : 用于一组虚拟内存区域使用相同页目录表 (PDT) 的控制结构体
+// @error_code : 记录在 trapframe->tf_err 中的错误代码，由硬件设置
+// @addr       : 引发内存访问异常的地址（来自 CR2 寄存器的内容）
+//
+// 调用图：trap--> trap_dispatch--> pgfault_handler--> do_pgfault
+// 处理器提供了两个信息来帮助识别页故障和恢复：
+// (1) CR2 寄存器的内容。处理器将 CR2 寄存器加载为产生异常的32位线性地址。
+//     do_pgfault 函数可以使用该地址找到相应的页目录和页表项。
+// (2) 栈上的错误代码。页故障的错误代码格式不同于其他异常。
+//     错误代码告诉异常处理程序以下三点：
+//     -- P 位 (第 0 位) 表示是否因为页不存在而产生的异常 (0) 或访问权限冲突/使用了保留位 (1)。
+//     -- W/R 位 (第 1 位) 表示引发异常的内存访问是读 (0) 还是写 (1)。
+//     -- U/S 位 (第 2 位) 表示异常发生时处理器是在用户模式 (1) 还是内核模式 (0) 下执行。
+
+int do_pgfault(struct mm_struct *mm, uint_t error_code, uintptr_t addr) {
     int ret = -E_INVAL;
-    //try to find a vma which include addr
+    
+    // 尝试找到包含给定地址的虚拟内存区域 (vma)
     struct vma_struct *vma = find_vma(mm, addr);
 
+    // 增加页故障计数
     pgfault_num++;
-    //If the addr is in the range of a mm's vma?
+
+    // 如果找不到 vma 或者 vma 的起始地址大于给定地址，说明该地址是无效的
     if (vma == NULL || vma->vm_start > addr) {
-        cprintf("not valid addr %x, and  can not find it in vma\n", addr);
+        cprintf("not valid addr %x, and cannot find it in vma\n", addr);
         goto failed;
     }
 
-    /* IF (write an existed addr ) OR
-     *    (write an non_existed addr && addr is writable) OR
-     *    (read  an non_existed addr && addr is readable)
-     * THEN
-     *    continue process
+    /* 如果 (写入已存在的地址) 或者
+     *    (写入不存在的地址并且该地址是可写的) 或者
+     *    (读取不存在的地址并且该地址是可读的)
+     * 则继续处理
      */
-    uint32_t perm = PTE_U;
+    uint32_t perm = PTE_U;  // 基础权限为用户访问权限
     if (vma->vm_flags & VM_WRITE) {
-        perm |= (PTE_R | PTE_W);
+        perm |= (PTE_R | PTE_W);  // 如果 vma 是可写的，设置为可读和可写权限
     }
+    // 将地址向下对齐到页面大小，以获取所在页面的起始地址
     addr = ROUNDDOWN(addr, PGSIZE);
 
     ret = -E_NO_MEM;
 
-    pte_t *ptep=NULL;
-    /*
-    * Maybe you want help comment, BELOW comments can help you finish the code
-    *
-    * Some Useful MACROs and DEFINEs, you can use them in below implementation.
-    * MACROs or Functions:
-    *   get_pte : get an pte and return the kernel virtual address of this pte for la
-    *             if the PT contians this pte didn't exist, alloc a page for PT (notice the 3th parameter '1')
-    *   pgdir_alloc_page : call alloc_page & page_insert functions to allocate a page size memory & setup
-    *             an addr map pa<--->la with linear address la and the PDT pgdir
-    * DEFINES:
-    *   VM_WRITE  : If vma->vm_flags & VM_WRITE == 1/0, then the vma is writable/non writable
-    *   PTE_W           0x002                   // page table/directory entry flags bit : Writeable
-    *   PTE_U           0x004                   // page table/directory entry flags bit : User can access
-    * VARIABLES:
-    *   mm->pgdir : the PDT of these vma
-    *
-    */
+    pte_t *ptep = NULL;
 
-
-    ptep = get_pte(mm->pgdir, addr, 1);  //(1) try to find a pte, if pte's
-                                         //PT(Page Table) isn't existed, then
-                                         //create a PT.
+    // 尝试找到页表项 (pte)，如果页表 (PT) 不存在，则创建一个页表
+    ptep = get_pte(mm->pgdir, addr, 1);
     if (*ptep == 0) {
+        // 如果页表项为空，调用 pgdir_alloc_page 分配一个页面，并建立页表项
         if (pgdir_alloc_page(mm->pgdir, addr, perm) == NULL) {
             cprintf("pgdir_alloc_page in do_pgfault failed\n");
             goto failed;
         }
     } else {
-        /*LAB3 EXERCISE 3: 2210204
-        * 请你根据以下信息提示，补充函数
-        * 现在我们认为pte是一个交换条目，那我们应该从磁盘加载数据并放到带有phy addr的页面，
-        * 并将phy addr与逻辑addr映射，触发交换管理器记录该页面的访问情况
+        /* LAB3 练习 3: 2210204
+        * 请根据以下信息提示，补充函数：
+        * 现在我们认为 pte 是一个交换条目，需要从磁盘加载数据，并将其放入物理内存页面，
+        * 并将物理地址与逻辑地址映射，触发交换管理器记录页面的访问情况。
         *
-        *  一些有用的宏和定义，可能会对你接下来代码的编写产生帮助(显然是有帮助的)
-        *  宏或函数:
-        *    swap_in(mm, addr, &page) : 分配一个内存页，然后根据
-        *    PTE中的swap条目的addr，找到磁盘页的地址，将磁盘页的内容读入这个内存页
-        *    page_insert ： 建立一个Page的phy addr与线性addr la的映射
-        *    swap_map_swappable ： 设置页面可交换
+        * 一些有用的宏和定义，可以帮助你完成代码：
+        * swap_in(mm, addr, &page) ：分配一个内存页，然后根据 PTE 中的交换条目的地址找到磁盘页，
+        *                          并将磁盘页内容读入这个内存页。
+        * page_insert ：建立物理地址 Page 与线性地址 la 的映射。
+        * swap_map_swappable ：设置页面可交换。
         */
         if (swap_init_ok) {
             struct Page *page = NULL;
-            // 你要编写的内容在这里，请基于上文说明以及下文的英文注释完成代码编写
-            //(1）According to the mm AND addr, try
-            //to load the content of right disk page
-            //into the memory which page managed.
-            if(swap_in(mm, addr, &page) == 0){
-
-            if(page_insert(mm->pgdir,page,addr,perm)==0){
-                swap_map_swappable(mm,addr,page,1);
-                page->pra_vaddr = addr;
-            }
-            //(2) According to the mm,
-            //addr AND page, setup the
-            //map of phy addr <--->
-            //logical addr
-            //(3) make the page swappable.
-            else{
-                cprintf("page_insert failed for addr 0x%x\n", addr);
-                goto failed;
-            }
-            }
-            else{
+            // (1) 根据 mm 和 addr，尝试将相应磁盘页的内容加载到由 page 管理的内存中
+            if (swap_in(mm, addr, &page) == 0) {
+                // (2) 根据 mm，addr 和 page 建立物理地址与逻辑地址之间的映射
+                if (page_insert(mm->pgdir, page, addr, perm) == 0) {
+                    // (3) 设置页面为可交换
+                    swap_map_swappable(mm, addr, page, 1);
+                    page->pra_vaddr = addr;
+                } else {
+                    cprintf("page_insert failed for addr 0x%x\n", addr);
+                    goto failed;
+                }
+            } else {
                 // 如果从交换区加载失败，返回错误
-            cprintf("swap_in failed for addr 0x%x\n", addr);
-            goto failed;
+                cprintf("swap_in failed for addr 0x%x\n", addr);
+                goto failed;
             }
         } else {
             cprintf("no swap_init_ok but ptep is %x, failed\n", *ptep);
             goto failed;
         }
-   }
+    }
 
-   ret = 0;
+    ret = 0;
 failed:
     return ret;
 }
-

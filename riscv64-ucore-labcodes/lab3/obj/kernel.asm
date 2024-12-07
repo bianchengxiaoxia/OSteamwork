@@ -2920,11 +2920,11 @@ ffffffffc02016c8:	0141                	addi	sp,sp,16
 ffffffffc02016ca:	8082                	ret
 
 ffffffffc02016cc <get_pte>:
-     *   PTE_W           0x002                   // page table/directory entry
-     * flags bit : Writeable
-     *   PTE_U           0x004                   // page table/directory entry
-     * flags bit : User can access
+     *   PTE_W           0x002  // 页表项/页目录项标志位：Writeable，可写
+     *   PTE_U           0x004  // 页表项/页目录项标志位：User 可访问
      */
+
+    // 第一级页目录项
     pde_t *pdep1 = &pgdir[PDX1(la)];
 ffffffffc02016cc:	01e5d793          	srli	a5,a1,0x1e
 ffffffffc02016d0:	1ff7f793          	andi	a5,a5,511
@@ -2936,6 +2936,7 @@ pte_t *get_pte(pde_t *pgdir, uintptr_t la, bool create) {
 ffffffffc02016d8:	fc26                	sd	s1,56(sp)
     pde_t *pdep1 = &pgdir[PDX1(la)];
 ffffffffc02016da:	00f504b3          	add	s1,a0,a5
+    // 检查第一级页目录项是否有效 (即是否存在页表)
     if (!(*pdep1 & PTE_V)) {
 ffffffffc02016de:	6094                	ld	a3,0(s1)
 pte_t *get_pte(pde_t *pgdir, uintptr_t la, bool create) {
@@ -2956,6 +2957,7 @@ ffffffffc02016f8:	00010997          	auipc	s3,0x10
 ffffffffc02016fc:	e2898993          	addi	s3,s3,-472 # ffffffffc0211520 <npage>
     if (!(*pdep1 & PTE_V)) {
 ffffffffc0201700:	efb5                	bnez	a5,ffffffffc020177c <get_pte+0xb0>
+        // 如果第一级页目录项无效，且 create 参数为 true，则分配一个新的页框来存储页表
         struct Page *page;
         if (!create || (page = alloc_page()) == NULL) {
 ffffffffc0201702:	14060c63          	beqz	a2,ffffffffc020185a <get_pte+0x18e>
@@ -2973,11 +2975,11 @@ ffffffffc0201726:	00080ab7          	lui	s5,0x80
 ffffffffc020172a:	40a40533          	sub	a0,s0,a0
 ffffffffc020172e:	850d                	srai	a0,a0,0x3
 ffffffffc0201730:	03650533          	mul	a0,a0,s6
-            return NULL;
+            return NULL;  // 如果 create 为 false 或分配页框失败，返回 NULL
         }
-        set_page_ref(page, 1);
-        uintptr_t pa = page2pa(page);
-        memset(KADDR(pa), 0, PGSIZE);
+        set_page_ref(page, 1);  // 设置页引用计数为 1，表示它被使用
+        uintptr_t pa = page2pa(page);  // 获取页框的物理地址
+        memset(KADDR(pa), 0, PGSIZE);  // 将页表页的内存清零
 ffffffffc0201734:	00010997          	auipc	s3,0x10
 ffffffffc0201738:	dec98993          	addi	s3,s3,-532 # ffffffffc0211520 <npage>
 static inline void set_page_ref(struct Page *page, int val) { page->ref = val; }
@@ -3011,9 +3013,11 @@ static inline pte_t pte_create(uintptr_t ppn, int type) {
     return (ppn << PTE_PPN_SHIFT) | PTE_V | type;
 ffffffffc0201774:	06aa                	slli	a3,a3,0xa
 ffffffffc0201776:	0116e693          	ori	a3,a3,17
-        *pdep1 = pte_create(page2ppn(page), PTE_U | PTE_V);
+        *pdep1 = pte_create(page2ppn(page), PTE_U | PTE_V);  // 创建页目录项，使其指向页表，并设置权限为用户可访问及有效
 ffffffffc020177a:	e094                	sd	a3,0(s1)
     }
+
+    // 获取第二级页目录项的地址 (根据第一级页目录项地址和 la)
     pde_t *pdep0 = &((pde_t *)KADDR(PDE_ADDR(*pdep1)))[PDX0(la)];
 ffffffffc020177c:	77fd                	lui	a5,0xfffff
 ffffffffc020177e:	068a                	slli	a3,a3,0x2
@@ -3029,13 +3033,14 @@ ffffffffc020179e:	1ff7f793          	andi	a5,a5,511
 ffffffffc02017a2:	96a2                	add	a3,a3,s0
 ffffffffc02017a4:	00379413          	slli	s0,a5,0x3
 ffffffffc02017a8:	9436                	add	s0,s0,a3
-//    pde_t *pdep0 = &((pde_t *)(PDE_ADDR(*pdep1)))[PDX0(la)];
+    // 检查第二级页目录项是否有效 (即是否存在页表项)
     if (!(*pdep0 & PTE_V)) {
 ffffffffc02017aa:	6014                	ld	a3,0(s0)
 ffffffffc02017ac:	0016f793          	andi	a5,a3,1
 ffffffffc02017b0:	ebad                	bnez	a5,ffffffffc0201822 <get_pte+0x156>
-    	struct Page *page;
-    	if (!create || (page = alloc_page()) == NULL) {
+        // 如果第二级页目录项无效，且 create 参数为 true，则分配一个新的页框来存储页表项
+        struct Page *page;
+        if (!create || (page = alloc_page()) == NULL) {
 ffffffffc02017b2:	0a0a0463          	beqz	s4,ffffffffc020185a <get_pte+0x18e>
 ffffffffc02017b6:	4505                	li	a0,1
 ffffffffc02017b8:	e09ff0ef          	jal	ra,ffffffffc02015c0 <alloc_pages>
@@ -3053,11 +3058,11 @@ ffffffffc02017dc:	850d                	srai	a0,a0,0x3
 ffffffffc02017de:	03650533          	mul	a0,a0,s6
 static inline void set_page_ref(struct Page *page, int val) { page->ref = val; }
 ffffffffc02017e2:	4785                	li	a5,1
-    		return NULL;
-    	}
-    	set_page_ref(page, 1);
-    	uintptr_t pa = page2pa(page);
-    	memset(KADDR(pa), 0, PGSIZE);
+            return NULL;  // 如果 create 为 false 或分配页框失败，返回 NULL
+        }
+        set_page_ref(page, 1);  // 设置页引用计数为 1，表示它被使用
+        uintptr_t pa = page2pa(page);  // 获取页框的物理地址
+        memset(KADDR(pa), 0, PGSIZE);  // 将页表项页的内存清零
 ffffffffc02017e4:	0009b703          	ld	a4,0(s3)
 ffffffffc02017e8:	c09c                	sw	a5,0(s1)
 static inline ppn_t page2ppn(struct Page *page) { return page - pages + nbase; }
@@ -3081,10 +3086,11 @@ ffffffffc0201814:	96d2                	add	a3,a3,s4
     return (ppn << PTE_PPN_SHIFT) | PTE_V | type;
 ffffffffc0201816:	06aa                	slli	a3,a3,0xa
 ffffffffc0201818:	0116e693          	ori	a3,a3,17
- //   	memset(pa, 0, PGSIZE);
-    	*pdep0 = pte_create(page2ppn(page), PTE_U | PTE_V);
+        *pdep0 = pte_create(page2ppn(page), PTE_U | PTE_V);  // 创建页目录项，使其指向页表项，并设置权限为用户可访问及有效
 ffffffffc020181c:	e014                	sd	a3,0(s0)
     }
+
+    // 获取最终的页表项地址，并返回其内核虚拟地址
     return &((pte_t *)KADDR(PDE_ADDR(*pdep0)))[PTX(la)];
 ffffffffc020181e:	0009b703          	ld	a4,0(s3)
 ffffffffc0201822:	068a                	slli	a3,a3,0x2
@@ -3110,36 +3116,36 @@ ffffffffc0201852:	6b42                	ld	s6,16(sp)
 ffffffffc0201854:	6ba2                	ld	s7,8(sp)
 ffffffffc0201856:	6161                	addi	sp,sp,80
 ffffffffc0201858:	8082                	ret
-            return NULL;
+            return NULL;  // 如果 create 为 false 或分配页框失败，返回 NULL
 ffffffffc020185a:	4501                	li	a0,0
 ffffffffc020185c:	b7e5                	j	ffffffffc0201844 <get_pte+0x178>
     pde_t *pdep0 = &((pde_t *)KADDR(PDE_ADDR(*pdep1)))[PDX0(la)];
 ffffffffc020185e:	00004617          	auipc	a2,0x4
 ffffffffc0201862:	98a60613          	addi	a2,a2,-1654 # ffffffffc02051e8 <default_pmm_manager+0x90>
-ffffffffc0201866:	10200593          	li	a1,258
+ffffffffc0201866:	0fc00593          	li	a1,252
 ffffffffc020186a:	00004517          	auipc	a0,0x4
 ffffffffc020186e:	9a650513          	addi	a0,a0,-1626 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0201872:	b03fe0ef          	jal	ra,ffffffffc0200374 <__panic>
     return &((pte_t *)KADDR(PDE_ADDR(*pdep0)))[PTX(la)];
 ffffffffc0201876:	00004617          	auipc	a2,0x4
 ffffffffc020187a:	97260613          	addi	a2,a2,-1678 # ffffffffc02051e8 <default_pmm_manager+0x90>
-ffffffffc020187e:	10f00593          	li	a1,271
+ffffffffc020187e:	10b00593          	li	a1,267
 ffffffffc0201882:	00004517          	auipc	a0,0x4
 ffffffffc0201886:	98e50513          	addi	a0,a0,-1650 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc020188a:	aebfe0ef          	jal	ra,ffffffffc0200374 <__panic>
-    	memset(KADDR(pa), 0, PGSIZE);
+        memset(KADDR(pa), 0, PGSIZE);  // 将页表项页的内存清零
 ffffffffc020188e:	86aa                	mv	a3,a0
 ffffffffc0201890:	00004617          	auipc	a2,0x4
 ffffffffc0201894:	95860613          	addi	a2,a2,-1704 # ffffffffc02051e8 <default_pmm_manager+0x90>
-ffffffffc0201898:	10b00593          	li	a1,267
+ffffffffc0201898:	10600593          	li	a1,262
 ffffffffc020189c:	00004517          	auipc	a0,0x4
 ffffffffc02018a0:	97450513          	addi	a0,a0,-1676 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02018a4:	ad1fe0ef          	jal	ra,ffffffffc0200374 <__panic>
-        memset(KADDR(pa), 0, PGSIZE);
+        memset(KADDR(pa), 0, PGSIZE);  // 将页表页的内存清零
 ffffffffc02018a8:	86aa                	mv	a3,a0
 ffffffffc02018aa:	00004617          	auipc	a2,0x4
 ffffffffc02018ae:	93e60613          	addi	a2,a2,-1730 # ffffffffc02051e8 <default_pmm_manager+0x90>
-ffffffffc02018b2:	0ff00593          	li	a1,255
+ffffffffc02018b2:	0f700593          	li	a1,247
 ffffffffc02018b6:	00004517          	auipc	a0,0x4
 ffffffffc02018ba:	95a50513          	addi	a0,a0,-1702 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02018be:	ab7fe0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -3551,7 +3557,7 @@ ffffffffc0201bc2:	4ec6e263          	bltu	a3,a2,ffffffffc02020a6 <pmm_init+0x5f0
 static void check_alloc_page(void) {
     pmm_manager->check();
 ffffffffc0201bc6:	000bb783          	ld	a5,0(s7)
-    boot_pgdir = (pte_t*)boot_page_table_sv39;
+    boot_pgdir = (pte_t*)boot_page_table_sv39;  // 将初始页目录表地址赋值给 boot_pgdir
 ffffffffc0201bca:	00010917          	auipc	s2,0x10
 ffffffffc0201bce:	94e90913          	addi	s2,s2,-1714 # ffffffffc0211518 <boot_pgdir>
     pmm_manager->check();
@@ -3561,11 +3567,11 @@ ffffffffc0201bd4:	9782                	jalr	a5
 ffffffffc0201bd6:	00003517          	auipc	a0,0x3
 ffffffffc0201bda:	6fa50513          	addi	a0,a0,1786 # ffffffffc02052d0 <default_pmm_manager+0x178>
 ffffffffc0201bde:	cdcfe0ef          	jal	ra,ffffffffc02000ba <cprintf>
-    boot_pgdir = (pte_t*)boot_page_table_sv39;
+    boot_pgdir = (pte_t*)boot_page_table_sv39;  // 将初始页目录表地址赋值给 boot_pgdir
 ffffffffc0201be2:	00007697          	auipc	a3,0x7
 ffffffffc0201be6:	41e68693          	addi	a3,a3,1054 # ffffffffc0209000 <boot_page_table_sv39>
 ffffffffc0201bea:	00d93023          	sd	a3,0(s2)
-    boot_cr3 = PADDR(boot_pgdir);
+    boot_cr3 = PADDR(boot_pgdir);  // 获取页目录表的物理地址并赋值给 boot_cr3
 ffffffffc0201bee:	c02007b7          	lui	a5,0xc0200
 ffffffffc0201bf2:	62f6e163          	bltu	a3,a5,ffffffffc0202214 <pmm_init+0x75e>
 ffffffffc0201bf6:	0009b783          	ld	a5,0(s3)
@@ -4247,7 +4253,7 @@ ffffffffc020219e:	00003697          	auipc	a3,0x3
 ffffffffc02021a2:	47a68693          	addi	a3,a3,1146 # ffffffffc0205618 <default_pmm_manager+0x4c0>
 ffffffffc02021a6:	00003617          	auipc	a2,0x3
 ffffffffc02021aa:	c0260613          	addi	a2,a2,-1022 # ffffffffc0204da8 <commands+0x738>
-ffffffffc02021ae:	1ce00593          	li	a1,462
+ffffffffc02021ae:	1ca00593          	li	a1,458
 ffffffffc02021b2:	00003517          	auipc	a0,0x3
 ffffffffc02021b6:	05e50513          	addi	a0,a0,94 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02021ba:	9bafe0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4256,14 +4262,14 @@ ffffffffc02021be:	00003697          	auipc	a3,0x3
 ffffffffc02021c2:	41a68693          	addi	a3,a3,1050 # ffffffffc02055d8 <default_pmm_manager+0x480>
 ffffffffc02021c6:	00003617          	auipc	a2,0x3
 ffffffffc02021ca:	be260613          	addi	a2,a2,-1054 # ffffffffc0204da8 <commands+0x738>
-ffffffffc02021ce:	1cd00593          	li	a1,461
+ffffffffc02021ce:	1c900593          	li	a1,457
 ffffffffc02021d2:	00003517          	auipc	a0,0x3
 ffffffffc02021d6:	03e50513          	addi	a0,a0,62 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02021da:	99afe0ef          	jal	ra,ffffffffc0200374 <__panic>
 ffffffffc02021de:	86a2                	mv	a3,s0
 ffffffffc02021e0:	00003617          	auipc	a2,0x3
 ffffffffc02021e4:	00860613          	addi	a2,a2,8 # ffffffffc02051e8 <default_pmm_manager+0x90>
-ffffffffc02021e8:	1cd00593          	li	a1,461
+ffffffffc02021e8:	1c900593          	li	a1,457
 ffffffffc02021ec:	00003517          	auipc	a0,0x3
 ffffffffc02021f0:	02450513          	addi	a0,a0,36 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02021f4:	980fe0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4275,10 +4281,10 @@ ffffffffc0202204:	07700593          	li	a1,119
 ffffffffc0202208:	00003517          	auipc	a0,0x3
 ffffffffc020220c:	00850513          	addi	a0,a0,8 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202210:	964fe0ef          	jal	ra,ffffffffc0200374 <__panic>
-    boot_cr3 = PADDR(boot_pgdir);
+    boot_cr3 = PADDR(boot_pgdir);  // 获取页目录表的物理地址并赋值给 boot_cr3
 ffffffffc0202214:	00003617          	auipc	a2,0x3
 ffffffffc0202218:	09460613          	addi	a2,a2,148 # ffffffffc02052a8 <default_pmm_manager+0x150>
-ffffffffc020221c:	0bd00593          	li	a1,189
+ffffffffc020221c:	0b900593          	li	a1,185
 ffffffffc0202220:	00003517          	auipc	a0,0x3
 ffffffffc0202224:	ff050513          	addi	a0,a0,-16 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202228:	94cfe0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4287,7 +4293,7 @@ ffffffffc020222c:	00003697          	auipc	a3,0x3
 ffffffffc0202230:	0e468693          	addi	a3,a3,228 # ffffffffc0205310 <default_pmm_manager+0x1b8>
 ffffffffc0202234:	00003617          	auipc	a2,0x3
 ffffffffc0202238:	b7460613          	addi	a2,a2,-1164 # ffffffffc0204da8 <commands+0x738>
-ffffffffc020223c:	19300593          	li	a1,403
+ffffffffc020223c:	18f00593          	li	a1,399
 ffffffffc0202240:	00003517          	auipc	a0,0x3
 ffffffffc0202244:	fd050513          	addi	a0,a0,-48 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202248:	92cfe0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4296,7 +4302,7 @@ ffffffffc020224c:	00003697          	auipc	a3,0x3
 ffffffffc0202250:	0a468693          	addi	a3,a3,164 # ffffffffc02052f0 <default_pmm_manager+0x198>
 ffffffffc0202254:	00003617          	auipc	a2,0x3
 ffffffffc0202258:	b5460613          	addi	a2,a2,-1196 # ffffffffc0204da8 <commands+0x738>
-ffffffffc020225c:	19200593          	li	a1,402
+ffffffffc020225c:	18e00593          	li	a1,398
 ffffffffc0202260:	00003517          	auipc	a0,0x3
 ffffffffc0202264:	fb050513          	addi	a0,a0,-80 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202268:	90cfe0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4306,7 +4312,7 @@ ffffffffc0202270:	00003697          	auipc	a3,0x3
 ffffffffc0202274:	13068693          	addi	a3,a3,304 # ffffffffc02053a0 <default_pmm_manager+0x248>
 ffffffffc0202278:	00003617          	auipc	a2,0x3
 ffffffffc020227c:	b3060613          	addi	a2,a2,-1232 # ffffffffc0204da8 <commands+0x738>
-ffffffffc0202280:	19a00593          	li	a1,410
+ffffffffc0202280:	19600593          	li	a1,406
 ffffffffc0202284:	00003517          	auipc	a0,0x3
 ffffffffc0202288:	f8c50513          	addi	a0,a0,-116 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc020228c:	8e8fe0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4315,7 +4321,7 @@ ffffffffc0202290:	00003697          	auipc	a3,0x3
 ffffffffc0202294:	0e068693          	addi	a3,a3,224 # ffffffffc0205370 <default_pmm_manager+0x218>
 ffffffffc0202298:	00003617          	auipc	a2,0x3
 ffffffffc020229c:	b1060613          	addi	a2,a2,-1264 # ffffffffc0204da8 <commands+0x738>
-ffffffffc02022a0:	19800593          	li	a1,408
+ffffffffc02022a0:	19400593          	li	a1,404
 ffffffffc02022a4:	00003517          	auipc	a0,0x3
 ffffffffc02022a8:	f6c50513          	addi	a0,a0,-148 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02022ac:	8c8fe0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4324,7 +4330,7 @@ ffffffffc02022b0:	00003697          	auipc	a3,0x3
 ffffffffc02022b4:	09868693          	addi	a3,a3,152 # ffffffffc0205348 <default_pmm_manager+0x1f0>
 ffffffffc02022b8:	00003617          	auipc	a2,0x3
 ffffffffc02022bc:	af060613          	addi	a2,a2,-1296 # ffffffffc0204da8 <commands+0x738>
-ffffffffc02022c0:	19400593          	li	a1,404
+ffffffffc02022c0:	19000593          	li	a1,400
 ffffffffc02022c4:	00003517          	auipc	a0,0x3
 ffffffffc02022c8:	f4c50513          	addi	a0,a0,-180 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02022cc:	8a8fe0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4333,7 +4339,7 @@ ffffffffc02022d0:	00003697          	auipc	a3,0x3
 ffffffffc02022d4:	15868693          	addi	a3,a3,344 # ffffffffc0205428 <default_pmm_manager+0x2d0>
 ffffffffc02022d8:	00003617          	auipc	a2,0x3
 ffffffffc02022dc:	ad060613          	addi	a2,a2,-1328 # ffffffffc0204da8 <commands+0x738>
-ffffffffc02022e0:	1a300593          	li	a1,419
+ffffffffc02022e0:	19f00593          	li	a1,415
 ffffffffc02022e4:	00003517          	auipc	a0,0x3
 ffffffffc02022e8:	f2c50513          	addi	a0,a0,-212 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02022ec:	888fe0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4342,7 +4348,7 @@ ffffffffc02022f0:	00003697          	auipc	a3,0x3
 ffffffffc02022f4:	1d868693          	addi	a3,a3,472 # ffffffffc02054c8 <default_pmm_manager+0x370>
 ffffffffc02022f8:	00003617          	auipc	a2,0x3
 ffffffffc02022fc:	ab060613          	addi	a2,a2,-1360 # ffffffffc0204da8 <commands+0x738>
-ffffffffc0202300:	1a800593          	li	a1,424
+ffffffffc0202300:	1a400593          	li	a1,420
 ffffffffc0202304:	00003517          	auipc	a0,0x3
 ffffffffc0202308:	f0c50513          	addi	a0,a0,-244 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc020230c:	868fe0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4351,7 +4357,7 @@ ffffffffc0202310:	00003697          	auipc	a3,0x3
 ffffffffc0202314:	0f068693          	addi	a3,a3,240 # ffffffffc0205400 <default_pmm_manager+0x2a8>
 ffffffffc0202318:	00003617          	auipc	a2,0x3
 ffffffffc020231c:	a9060613          	addi	a2,a2,-1392 # ffffffffc0204da8 <commands+0x738>
-ffffffffc0202320:	1a000593          	li	a1,416
+ffffffffc0202320:	19c00593          	li	a1,412
 ffffffffc0202324:	00003517          	auipc	a0,0x3
 ffffffffc0202328:	eec50513          	addi	a0,a0,-276 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc020232c:	848fe0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4359,7 +4365,7 @@ ffffffffc020232c:	848fe0ef          	jal	ra,ffffffffc0200374 <__panic>
 ffffffffc0202330:	86d6                	mv	a3,s5
 ffffffffc0202332:	00003617          	auipc	a2,0x3
 ffffffffc0202336:	eb660613          	addi	a2,a2,-330 # ffffffffc02051e8 <default_pmm_manager+0x90>
-ffffffffc020233a:	19f00593          	li	a1,415
+ffffffffc020233a:	19b00593          	li	a1,411
 ffffffffc020233e:	00003517          	auipc	a0,0x3
 ffffffffc0202342:	ed250513          	addi	a0,a0,-302 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202346:	82efe0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4368,7 +4374,7 @@ ffffffffc020234a:	00003697          	auipc	a3,0x3
 ffffffffc020234e:	11668693          	addi	a3,a3,278 # ffffffffc0205460 <default_pmm_manager+0x308>
 ffffffffc0202352:	00003617          	auipc	a2,0x3
 ffffffffc0202356:	a5660613          	addi	a2,a2,-1450 # ffffffffc0204da8 <commands+0x738>
-ffffffffc020235a:	1ad00593          	li	a1,429
+ffffffffc020235a:	1a900593          	li	a1,425
 ffffffffc020235e:	00003517          	auipc	a0,0x3
 ffffffffc0202362:	eb250513          	addi	a0,a0,-334 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202366:	80efe0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4377,7 +4383,7 @@ ffffffffc020236a:	00003697          	auipc	a3,0x3
 ffffffffc020236e:	1be68693          	addi	a3,a3,446 # ffffffffc0205528 <default_pmm_manager+0x3d0>
 ffffffffc0202372:	00003617          	auipc	a2,0x3
 ffffffffc0202376:	a3660613          	addi	a2,a2,-1482 # ffffffffc0204da8 <commands+0x738>
-ffffffffc020237a:	1ac00593          	li	a1,428
+ffffffffc020237a:	1a800593          	li	a1,424
 ffffffffc020237e:	00003517          	auipc	a0,0x3
 ffffffffc0202382:	e9250513          	addi	a0,a0,-366 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202386:	feffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4386,7 +4392,7 @@ ffffffffc020238a:	00003697          	auipc	a3,0x3
 ffffffffc020238e:	18668693          	addi	a3,a3,390 # ffffffffc0205510 <default_pmm_manager+0x3b8>
 ffffffffc0202392:	00003617          	auipc	a2,0x3
 ffffffffc0202396:	a1660613          	addi	a2,a2,-1514 # ffffffffc0204da8 <commands+0x738>
-ffffffffc020239a:	1ab00593          	li	a1,427
+ffffffffc020239a:	1a700593          	li	a1,423
 ffffffffc020239e:	00003517          	auipc	a0,0x3
 ffffffffc02023a2:	e7250513          	addi	a0,a0,-398 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02023a6:	fcffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4395,7 +4401,7 @@ ffffffffc02023aa:	00003697          	auipc	a3,0x3
 ffffffffc02023ae:	13668693          	addi	a3,a3,310 # ffffffffc02054e0 <default_pmm_manager+0x388>
 ffffffffc02023b2:	00003617          	auipc	a2,0x3
 ffffffffc02023b6:	9f660613          	addi	a2,a2,-1546 # ffffffffc0204da8 <commands+0x738>
-ffffffffc02023ba:	1aa00593          	li	a1,426
+ffffffffc02023ba:	1a600593          	li	a1,422
 ffffffffc02023be:	00003517          	auipc	a0,0x3
 ffffffffc02023c2:	e5250513          	addi	a0,a0,-430 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02023c6:	faffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4404,7 +4410,7 @@ ffffffffc02023ca:	00003697          	auipc	a3,0x3
 ffffffffc02023ce:	2ce68693          	addi	a3,a3,718 # ffffffffc0205698 <default_pmm_manager+0x540>
 ffffffffc02023d2:	00003617          	auipc	a2,0x3
 ffffffffc02023d6:	9d660613          	addi	a2,a2,-1578 # ffffffffc0204da8 <commands+0x738>
-ffffffffc02023da:	1d800593          	li	a1,472
+ffffffffc02023da:	1d400593          	li	a1,468
 ffffffffc02023de:	00003517          	auipc	a0,0x3
 ffffffffc02023e2:	e3250513          	addi	a0,a0,-462 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02023e6:	f8ffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4413,7 +4419,7 @@ ffffffffc02023ea:	00003697          	auipc	a3,0x3
 ffffffffc02023ee:	0c668693          	addi	a3,a3,198 # ffffffffc02054b0 <default_pmm_manager+0x358>
 ffffffffc02023f2:	00003617          	auipc	a2,0x3
 ffffffffc02023f6:	9b660613          	addi	a2,a2,-1610 # ffffffffc0204da8 <commands+0x738>
-ffffffffc02023fa:	1a700593          	li	a1,423
+ffffffffc02023fa:	1a300593          	li	a1,419
 ffffffffc02023fe:	00003517          	auipc	a0,0x3
 ffffffffc0202402:	e1250513          	addi	a0,a0,-494 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202406:	f6ffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4422,7 +4428,7 @@ ffffffffc020240a:	00003697          	auipc	a3,0x3
 ffffffffc020240e:	09668693          	addi	a3,a3,150 # ffffffffc02054a0 <default_pmm_manager+0x348>
 ffffffffc0202412:	00003617          	auipc	a2,0x3
 ffffffffc0202416:	99660613          	addi	a2,a2,-1642 # ffffffffc0204da8 <commands+0x738>
-ffffffffc020241a:	1a600593          	li	a1,422
+ffffffffc020241a:	1a200593          	li	a1,418
 ffffffffc020241e:	00003517          	auipc	a0,0x3
 ffffffffc0202422:	df250513          	addi	a0,a0,-526 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202426:	f4ffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4431,7 +4437,7 @@ ffffffffc020242a:	00003697          	auipc	a3,0x3
 ffffffffc020242e:	16e68693          	addi	a3,a3,366 # ffffffffc0205598 <default_pmm_manager+0x440>
 ffffffffc0202432:	00003617          	auipc	a2,0x3
 ffffffffc0202436:	97660613          	addi	a2,a2,-1674 # ffffffffc0204da8 <commands+0x738>
-ffffffffc020243a:	1e800593          	li	a1,488
+ffffffffc020243a:	1e400593          	li	a1,484
 ffffffffc020243e:	00003517          	auipc	a0,0x3
 ffffffffc0202442:	dd250513          	addi	a0,a0,-558 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202446:	f2ffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4440,7 +4446,7 @@ ffffffffc020244a:	00003697          	auipc	a3,0x3
 ffffffffc020244e:	04668693          	addi	a3,a3,70 # ffffffffc0205490 <default_pmm_manager+0x338>
 ffffffffc0202452:	00003617          	auipc	a2,0x3
 ffffffffc0202456:	95660613          	addi	a2,a2,-1706 # ffffffffc0204da8 <commands+0x738>
-ffffffffc020245a:	1a500593          	li	a1,421
+ffffffffc020245a:	1a100593          	li	a1,417
 ffffffffc020245e:	00003517          	auipc	a0,0x3
 ffffffffc0202462:	db250513          	addi	a0,a0,-590 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202466:	f0ffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4449,7 +4455,7 @@ ffffffffc020246a:	00003697          	auipc	a3,0x3
 ffffffffc020246e:	f7e68693          	addi	a3,a3,-130 # ffffffffc02053e8 <default_pmm_manager+0x290>
 ffffffffc0202472:	00003617          	auipc	a2,0x3
 ffffffffc0202476:	93660613          	addi	a2,a2,-1738 # ffffffffc0204da8 <commands+0x738>
-ffffffffc020247a:	1b200593          	li	a1,434
+ffffffffc020247a:	1ae00593          	li	a1,430
 ffffffffc020247e:	00003517          	auipc	a0,0x3
 ffffffffc0202482:	d9250513          	addi	a0,a0,-622 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202486:	eeffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4458,7 +4464,7 @@ ffffffffc020248a:	00003697          	auipc	a3,0x3
 ffffffffc020248e:	0b668693          	addi	a3,a3,182 # ffffffffc0205540 <default_pmm_manager+0x3e8>
 ffffffffc0202492:	00003617          	auipc	a2,0x3
 ffffffffc0202496:	91660613          	addi	a2,a2,-1770 # ffffffffc0204da8 <commands+0x738>
-ffffffffc020249a:	1af00593          	li	a1,431
+ffffffffc020249a:	1ab00593          	li	a1,427
 ffffffffc020249e:	00003517          	auipc	a0,0x3
 ffffffffc02024a2:	d7250513          	addi	a0,a0,-654 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02024a6:	ecffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4467,7 +4473,7 @@ ffffffffc02024aa:	00003697          	auipc	a3,0x3
 ffffffffc02024ae:	f2668693          	addi	a3,a3,-218 # ffffffffc02053d0 <default_pmm_manager+0x278>
 ffffffffc02024b2:	00003617          	auipc	a2,0x3
 ffffffffc02024b6:	8f660613          	addi	a2,a2,-1802 # ffffffffc0204da8 <commands+0x738>
-ffffffffc02024ba:	1ae00593          	li	a1,430
+ffffffffc02024ba:	1aa00593          	li	a1,426
 ffffffffc02024be:	00003517          	auipc	a0,0x3
 ffffffffc02024c2:	d5250513          	addi	a0,a0,-686 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02024c6:	eaffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4483,7 +4489,7 @@ ffffffffc02024e2:	00003697          	auipc	a3,0x3
 ffffffffc02024e6:	08e68693          	addi	a3,a3,142 # ffffffffc0205570 <default_pmm_manager+0x418>
 ffffffffc02024ea:	00003617          	auipc	a2,0x3
 ffffffffc02024ee:	8be60613          	addi	a2,a2,-1858 # ffffffffc0204da8 <commands+0x738>
-ffffffffc02024f2:	1b900593          	li	a1,441
+ffffffffc02024f2:	1b500593          	li	a1,437
 ffffffffc02024f6:	00003517          	auipc	a0,0x3
 ffffffffc02024fa:	d1a50513          	addi	a0,a0,-742 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02024fe:	e77fd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4492,7 +4498,7 @@ ffffffffc0202502:	00003697          	auipc	a3,0x3
 ffffffffc0202506:	02668693          	addi	a3,a3,38 # ffffffffc0205528 <default_pmm_manager+0x3d0>
 ffffffffc020250a:	00003617          	auipc	a2,0x3
 ffffffffc020250e:	89e60613          	addi	a2,a2,-1890 # ffffffffc0204da8 <commands+0x738>
-ffffffffc0202512:	1b700593          	li	a1,439
+ffffffffc0202512:	1b300593          	li	a1,435
 ffffffffc0202516:	00003517          	auipc	a0,0x3
 ffffffffc020251a:	cfa50513          	addi	a0,a0,-774 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc020251e:	e57fd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4501,7 +4507,7 @@ ffffffffc0202522:	00003697          	auipc	a3,0x3
 ffffffffc0202526:	03668693          	addi	a3,a3,54 # ffffffffc0205558 <default_pmm_manager+0x400>
 ffffffffc020252a:	00003617          	auipc	a2,0x3
 ffffffffc020252e:	87e60613          	addi	a2,a2,-1922 # ffffffffc0204da8 <commands+0x738>
-ffffffffc0202532:	1b600593          	li	a1,438
+ffffffffc0202532:	1b200593          	li	a1,434
 ffffffffc0202536:	00003517          	auipc	a0,0x3
 ffffffffc020253a:	cda50513          	addi	a0,a0,-806 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc020253e:	e37fd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4510,7 +4516,7 @@ ffffffffc0202542:	00003697          	auipc	a3,0x3
 ffffffffc0202546:	fe668693          	addi	a3,a3,-26 # ffffffffc0205528 <default_pmm_manager+0x3d0>
 ffffffffc020254a:	00003617          	auipc	a2,0x3
 ffffffffc020254e:	85e60613          	addi	a2,a2,-1954 # ffffffffc0204da8 <commands+0x738>
-ffffffffc0202552:	1b300593          	li	a1,435
+ffffffffc0202552:	1af00593          	li	a1,431
 ffffffffc0202556:	00003517          	auipc	a0,0x3
 ffffffffc020255a:	cba50513          	addi	a0,a0,-838 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc020255e:	e17fd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4519,7 +4525,7 @@ ffffffffc0202562:	00003697          	auipc	a3,0x3
 ffffffffc0202566:	11e68693          	addi	a3,a3,286 # ffffffffc0205680 <default_pmm_manager+0x528>
 ffffffffc020256a:	00003617          	auipc	a2,0x3
 ffffffffc020256e:	83e60613          	addi	a2,a2,-1986 # ffffffffc0204da8 <commands+0x738>
-ffffffffc0202572:	1d700593          	li	a1,471
+ffffffffc0202572:	1d300593          	li	a1,467
 ffffffffc0202576:	00003517          	auipc	a0,0x3
 ffffffffc020257a:	c9a50513          	addi	a0,a0,-870 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc020257e:	df7fd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4528,7 +4534,7 @@ ffffffffc0202582:	00003697          	auipc	a3,0x3
 ffffffffc0202586:	0c668693          	addi	a3,a3,198 # ffffffffc0205648 <default_pmm_manager+0x4f0>
 ffffffffc020258a:	00003617          	auipc	a2,0x3
 ffffffffc020258e:	81e60613          	addi	a2,a2,-2018 # ffffffffc0204da8 <commands+0x738>
-ffffffffc0202592:	1d600593          	li	a1,470
+ffffffffc0202592:	1d200593          	li	a1,466
 ffffffffc0202596:	00003517          	auipc	a0,0x3
 ffffffffc020259a:	c7a50513          	addi	a0,a0,-902 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc020259e:	dd7fd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4537,7 +4543,7 @@ ffffffffc02025a2:	00003697          	auipc	a3,0x3
 ffffffffc02025a6:	08e68693          	addi	a3,a3,142 # ffffffffc0205630 <default_pmm_manager+0x4d8>
 ffffffffc02025aa:	00002617          	auipc	a2,0x2
 ffffffffc02025ae:	7fe60613          	addi	a2,a2,2046 # ffffffffc0204da8 <commands+0x738>
-ffffffffc02025b2:	1d200593          	li	a1,466
+ffffffffc02025b2:	1ce00593          	li	a1,462
 ffffffffc02025b6:	00003517          	auipc	a0,0x3
 ffffffffc02025ba:	c5a50513          	addi	a0,a0,-934 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02025be:	db7fd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4546,7 +4552,7 @@ ffffffffc02025c2:	00003697          	auipc	a3,0x3
 ffffffffc02025c6:	fd668693          	addi	a3,a3,-42 # ffffffffc0205598 <default_pmm_manager+0x440>
 ffffffffc02025ca:	00002617          	auipc	a2,0x2
 ffffffffc02025ce:	7de60613          	addi	a2,a2,2014 # ffffffffc0204da8 <commands+0x738>
-ffffffffc02025d2:	1c000593          	li	a1,448
+ffffffffc02025d2:	1bc00593          	li	a1,444
 ffffffffc02025d6:	00003517          	auipc	a0,0x3
 ffffffffc02025da:	c3a50513          	addi	a0,a0,-966 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02025de:	d97fd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4555,14 +4561,14 @@ ffffffffc02025e2:	00003697          	auipc	a3,0x3
 ffffffffc02025e6:	dee68693          	addi	a3,a3,-530 # ffffffffc02053d0 <default_pmm_manager+0x278>
 ffffffffc02025ea:	00002617          	auipc	a2,0x2
 ffffffffc02025ee:	7be60613          	addi	a2,a2,1982 # ffffffffc0204da8 <commands+0x738>
-ffffffffc02025f2:	19b00593          	li	a1,411
+ffffffffc02025f2:	19700593          	li	a1,407
 ffffffffc02025f6:	00003517          	auipc	a0,0x3
 ffffffffc02025fa:	c1a50513          	addi	a0,a0,-998 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02025fe:	d77fd0ef          	jal	ra,ffffffffc0200374 <__panic>
     ptep = (pte_t *)KADDR(PDE_ADDR(boot_pgdir[0]));
 ffffffffc0202602:	00003617          	auipc	a2,0x3
 ffffffffc0202606:	be660613          	addi	a2,a2,-1050 # ffffffffc02051e8 <default_pmm_manager+0x90>
-ffffffffc020260a:	19e00593          	li	a1,414
+ffffffffc020260a:	19a00593          	li	a1,410
 ffffffffc020260e:	00003517          	auipc	a0,0x3
 ffffffffc0202612:	c0250513          	addi	a0,a0,-1022 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202616:	d5ffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4571,7 +4577,7 @@ ffffffffc020261a:	00003697          	auipc	a3,0x3
 ffffffffc020261e:	dce68693          	addi	a3,a3,-562 # ffffffffc02053e8 <default_pmm_manager+0x290>
 ffffffffc0202622:	00002617          	auipc	a2,0x2
 ffffffffc0202626:	78660613          	addi	a2,a2,1926 # ffffffffc0204da8 <commands+0x738>
-ffffffffc020262a:	19c00593          	li	a1,412
+ffffffffc020262a:	19800593          	li	a1,408
 ffffffffc020262e:	00003517          	auipc	a0,0x3
 ffffffffc0202632:	be250513          	addi	a0,a0,-1054 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202636:	d3ffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4580,7 +4586,7 @@ ffffffffc020263a:	00003697          	auipc	a3,0x3
 ffffffffc020263e:	e2668693          	addi	a3,a3,-474 # ffffffffc0205460 <default_pmm_manager+0x308>
 ffffffffc0202642:	00002617          	auipc	a2,0x2
 ffffffffc0202646:	76660613          	addi	a2,a2,1894 # ffffffffc0204da8 <commands+0x738>
-ffffffffc020264a:	1a400593          	li	a1,420
+ffffffffc020264a:	1a000593          	li	a1,416
 ffffffffc020264e:	00003517          	auipc	a0,0x3
 ffffffffc0202652:	bc250513          	addi	a0,a0,-1086 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202656:	d1ffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4589,7 +4595,7 @@ ffffffffc020265a:	00003697          	auipc	a3,0x3
 ffffffffc020265e:	0e668693          	addi	a3,a3,230 # ffffffffc0205740 <default_pmm_manager+0x5e8>
 ffffffffc0202662:	00002617          	auipc	a2,0x2
 ffffffffc0202666:	74660613          	addi	a2,a2,1862 # ffffffffc0204da8 <commands+0x738>
-ffffffffc020266a:	1e000593          	li	a1,480
+ffffffffc020266a:	1dc00593          	li	a1,476
 ffffffffc020266e:	00003517          	auipc	a0,0x3
 ffffffffc0202672:	ba250513          	addi	a0,a0,-1118 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202676:	cfffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4598,7 +4604,7 @@ ffffffffc020267a:	00003697          	auipc	a3,0x3
 ffffffffc020267e:	08e68693          	addi	a3,a3,142 # ffffffffc0205708 <default_pmm_manager+0x5b0>
 ffffffffc0202682:	00002617          	auipc	a2,0x2
 ffffffffc0202686:	72660613          	addi	a2,a2,1830 # ffffffffc0204da8 <commands+0x738>
-ffffffffc020268a:	1dd00593          	li	a1,477
+ffffffffc020268a:	1d900593          	li	a1,473
 ffffffffc020268e:	00003517          	auipc	a0,0x3
 ffffffffc0202692:	b8250513          	addi	a0,a0,-1150 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202696:	cdffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4607,7 +4613,7 @@ ffffffffc020269a:	00003697          	auipc	a3,0x3
 ffffffffc020269e:	03e68693          	addi	a3,a3,62 # ffffffffc02056d8 <default_pmm_manager+0x580>
 ffffffffc02026a2:	00002617          	auipc	a2,0x2
 ffffffffc02026a6:	70660613          	addi	a2,a2,1798 # ffffffffc0204da8 <commands+0x738>
-ffffffffc02026aa:	1d900593          	li	a1,473
+ffffffffc02026aa:	1d500593          	li	a1,469
 ffffffffc02026ae:	00003517          	auipc	a0,0x3
 ffffffffc02026b2:	b6250513          	addi	a0,a0,-1182 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02026b6:	cbffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4675,7 +4681,7 @@ ffffffffc0202720:	00003697          	auipc	a3,0x3
 ffffffffc0202724:	06868693          	addi	a3,a3,104 # ffffffffc0205788 <default_pmm_manager+0x630>
 ffffffffc0202728:	00002617          	auipc	a2,0x2
 ffffffffc020272c:	68060613          	addi	a2,a2,1664 # ffffffffc0204da8 <commands+0x738>
-ffffffffc0202730:	17a00593          	li	a1,378
+ffffffffc0202730:	17600593          	li	a1,374
 ffffffffc0202734:	00003517          	auipc	a0,0x3
 ffffffffc0202738:	adc50513          	addi	a0,a0,-1316 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc020273c:	c39fd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4767,7 +4773,7 @@ ffffffffc02027d8:	00003697          	auipc	a3,0x3
 ffffffffc02027dc:	fc868693          	addi	a3,a3,-56 # ffffffffc02057a0 <default_pmm_manager+0x648>
 ffffffffc02027e0:	00002617          	auipc	a2,0x2
 ffffffffc02027e4:	5c860613          	addi	a2,a2,1480 # ffffffffc0204da8 <commands+0x738>
-ffffffffc02027e8:	1f000593          	li	a1,496
+ffffffffc02027e8:	1ec00593          	li	a1,492
 ffffffffc02027ec:	00003517          	auipc	a0,0x3
 ffffffffc02027f0:	a2450513          	addi	a0,a0,-1500 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02027f4:	b81fd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4783,7 +4789,7 @@ ffffffffc0202812:	00003697          	auipc	a3,0x3
 ffffffffc0202816:	fae68693          	addi	a3,a3,-82 # ffffffffc02057c0 <default_pmm_manager+0x668>
 ffffffffc020281a:	00002617          	auipc	a2,0x2
 ffffffffc020281e:	58e60613          	addi	a2,a2,1422 # ffffffffc0204da8 <commands+0x738>
-ffffffffc0202822:	1f300593          	li	a1,499
+ffffffffc0202822:	1ef00593          	li	a1,495
 ffffffffc0202826:	00003517          	auipc	a0,0x3
 ffffffffc020282a:	9ea50513          	addi	a0,a0,-1558 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc020282e:	b47fd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4874,7 +4880,7 @@ ffffffffc02028da:	00003697          	auipc	a3,0x3
 ffffffffc02028de:	ef668693          	addi	a3,a3,-266 # ffffffffc02057d0 <default_pmm_manager+0x678>
 ffffffffc02028e2:	00002617          	auipc	a2,0x2
 ffffffffc02028e6:	4c660613          	addi	a2,a2,1222 # ffffffffc0204da8 <commands+0x738>
-ffffffffc02028ea:	1fa00593          	li	a1,506
+ffffffffc02028ea:	1f600593          	li	a1,502
 ffffffffc02028ee:	00003517          	auipc	a0,0x3
 ffffffffc02028f2:	92250513          	addi	a0,a0,-1758 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc02028f6:	a7ffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -4883,7 +4889,7 @@ ffffffffc02028fa:	00003697          	auipc	a3,0x3
 ffffffffc02028fe:	ea668693          	addi	a3,a3,-346 # ffffffffc02057a0 <default_pmm_manager+0x648>
 ffffffffc0202902:	00002617          	auipc	a2,0x2
 ffffffffc0202906:	4a660613          	addi	a2,a2,1190 # ffffffffc0204da8 <commands+0x738>
-ffffffffc020290a:	1f900593          	li	a1,505
+ffffffffc020290a:	1f500593          	li	a1,501
 ffffffffc020290e:	00003517          	auipc	a0,0x3
 ffffffffc0202912:	90250513          	addi	a0,a0,-1790 # ffffffffc0205210 <default_pmm_manager+0xb8>
 ffffffffc0202916:	a5ffd0ef          	jal	ra,ffffffffc0200374 <__panic>
@@ -7127,18 +7133,19 @@ ffffffffc0203c60:	02c50513          	addi	a0,a0,44 # ffffffffc0205c88 <default_p
 ffffffffc0203c64:	f10fc0ef          	jal	ra,ffffffffc0200374 <__panic>
 
 ffffffffc0203c68 <do_pgfault>:
- *            was a read (0) or write (1).
- *         -- The U/S flag (bit 2) indicates whether the processor was executing at user mode (1)
- *            or supervisor mode (0) at the time of the exception.
- */
-int
-do_pgfault(struct mm_struct *mm, uint_t error_code, uintptr_t addr) {
+//     错误代码告诉异常处理程序以下三点：
+//     -- P 位 (第 0 位) 表示是否因为页不存在而产生的异常 (0) 或访问权限冲突/使用了保留位 (1)。
+//     -- W/R 位 (第 1 位) 表示引发异常的内存访问是读 (0) 还是写 (1)。
+//     -- U/S 位 (第 2 位) 表示异常发生时处理器是在用户模式 (1) 还是内核模式 (0) 下执行。
+
+int do_pgfault(struct mm_struct *mm, uint_t error_code, uintptr_t addr) {
 ffffffffc0203c68:	7179                	addi	sp,sp,-48
     int ret = -E_INVAL;
-    //try to find a vma which include addr
+    
+    // 尝试找到包含给定地址的虚拟内存区域 (vma)
     struct vma_struct *vma = find_vma(mm, addr);
 ffffffffc0203c6a:	85b2                	mv	a1,a2
-do_pgfault(struct mm_struct *mm, uint_t error_code, uintptr_t addr) {
+int do_pgfault(struct mm_struct *mm, uint_t error_code, uintptr_t addr) {
 ffffffffc0203c6c:	f022                	sd	s0,32(sp)
 ffffffffc0203c6e:	ec26                	sd	s1,24(sp)
 ffffffffc0203c70:	f406                	sd	ra,40(sp)
@@ -7148,76 +7155,74 @@ ffffffffc0203c76:	84aa                	mv	s1,a0
     struct vma_struct *vma = find_vma(mm, addr);
 ffffffffc0203c78:	8d3ff0ef          	jal	ra,ffffffffc020354a <find_vma>
 
+    // 增加页故障计数
     pgfault_num++;
 ffffffffc0203c7c:	0000e797          	auipc	a5,0xe
 ffffffffc0203c80:	8ec7a783          	lw	a5,-1812(a5) # ffffffffc0211568 <pgfault_num>
 ffffffffc0203c84:	2785                	addiw	a5,a5,1
 ffffffffc0203c86:	0000e717          	auipc	a4,0xe
 ffffffffc0203c8a:	8ef72123          	sw	a5,-1822(a4) # ffffffffc0211568 <pgfault_num>
-    //If the addr is in the range of a mm's vma?
+
+    // 如果找不到 vma 或者 vma 的起始地址大于给定地址，说明该地址是无效的
     if (vma == NULL || vma->vm_start > addr) {
 ffffffffc0203c8e:	c549                	beqz	a0,ffffffffc0203d18 <do_pgfault+0xb0>
 ffffffffc0203c90:	651c                	ld	a5,8(a0)
 ffffffffc0203c92:	08f46363          	bltu	s0,a5,ffffffffc0203d18 <do_pgfault+0xb0>
-     *    (read  an non_existed addr && addr is readable)
-     * THEN
-     *    continue process
+     *    (写入不存在的地址并且该地址是可写的) 或者
+     *    (读取不存在的地址并且该地址是可读的)
+     * 则继续处理
      */
-    uint32_t perm = PTE_U;
+    uint32_t perm = PTE_U;  // 基础权限为用户访问权限
     if (vma->vm_flags & VM_WRITE) {
 ffffffffc0203c96:	6d1c                	ld	a5,24(a0)
-    uint32_t perm = PTE_U;
+    uint32_t perm = PTE_U;  // 基础权限为用户访问权限
 ffffffffc0203c98:	4941                	li	s2,16
     if (vma->vm_flags & VM_WRITE) {
 ffffffffc0203c9a:	8b89                	andi	a5,a5,2
 ffffffffc0203c9c:	efa9                	bnez	a5,ffffffffc0203cf6 <do_pgfault+0x8e>
-        perm |= (PTE_R | PTE_W);
+        perm |= (PTE_R | PTE_W);  // 如果 vma 是可写的，设置为可读和可写权限
     }
+    // 将地址向下对齐到页面大小，以获取所在页面的起始地址
     addr = ROUNDDOWN(addr, PGSIZE);
 ffffffffc0203c9e:	75fd                	lui	a1,0xfffff
-    *   mm->pgdir : the PDT of these vma
-    *
-    */
+    ret = -E_NO_MEM;
 
+    pte_t *ptep = NULL;
 
-    ptep = get_pte(mm->pgdir, addr, 1);  //(1) try to find a pte, if pte's
+    // 尝试找到页表项 (pte)，如果页表 (PT) 不存在，则创建一个页表
+    ptep = get_pte(mm->pgdir, addr, 1);
 ffffffffc0203ca0:	6c88                	ld	a0,24(s1)
     addr = ROUNDDOWN(addr, PGSIZE);
 ffffffffc0203ca2:	8c6d                	and	s0,s0,a1
-    ptep = get_pte(mm->pgdir, addr, 1);  //(1) try to find a pte, if pte's
+    ptep = get_pte(mm->pgdir, addr, 1);
 ffffffffc0203ca4:	85a2                	mv	a1,s0
 ffffffffc0203ca6:	4605                	li	a2,1
 ffffffffc0203ca8:	a25fd0ef          	jal	ra,ffffffffc02016cc <get_pte>
-                                         //PT(Page Table) isn't existed, then
-                                         //create a PT.
     if (*ptep == 0) {
 ffffffffc0203cac:	610c                	ld	a1,0(a0)
 ffffffffc0203cae:	c5b1                	beqz	a1,ffffffffc0203cfa <do_pgfault+0x92>
-        *    swap_in(mm, addr, &page) : 分配一个内存页，然后根据
-        *    PTE中的swap条目的addr，找到磁盘页的地址，将磁盘页的内容读入这个内存页
-        *    page_insert ： 建立一个Page的phy addr与线性addr la的映射
-        *    swap_map_swappable ： 设置页面可交换
+        * swap_in(mm, addr, &page) ：分配一个内存页，然后根据 PTE 中的交换条目的地址找到磁盘页，
+        *                          并将磁盘页内容读入这个内存页。
+        * page_insert ：建立物理地址 Page 与线性地址 la 的映射。
+        * swap_map_swappable ：设置页面可交换。
         */
         if (swap_init_ok) {
 ffffffffc0203cb0:	0000e797          	auipc	a5,0xe
 ffffffffc0203cb4:	8a07a783          	lw	a5,-1888(a5) # ffffffffc0211550 <swap_init_ok>
 ffffffffc0203cb8:	cbad                	beqz	a5,ffffffffc0203d2a <do_pgfault+0xc2>
             struct Page *page = NULL;
-            // 你要编写的内容在这里，请基于上文说明以及下文的英文注释完成代码编写
-            //(1）According to the mm AND addr, try
-            //to load the content of right disk page
-            //into the memory which page managed.
-            if(swap_in(mm, addr, &page) == 0){
+            // (1) 根据 mm 和 addr，尝试将相应磁盘页的内容加载到由 page 管理的内存中
+            if (swap_in(mm, addr, &page) == 0) {
 ffffffffc0203cba:	0030                	addi	a2,sp,8
 ffffffffc0203cbc:	85a2                	mv	a1,s0
 ffffffffc0203cbe:	8526                	mv	a0,s1
             struct Page *page = NULL;
 ffffffffc0203cc0:	e402                	sd	zero,8(sp)
-            if(swap_in(mm, addr, &page) == 0){
+            if (swap_in(mm, addr, &page) == 0) {
 ffffffffc0203cc2:	beeff0ef          	jal	ra,ffffffffc02030b0 <swap_in>
 ffffffffc0203cc6:	e935                	bnez	a0,ffffffffc0203d3a <do_pgfault+0xd2>
-
-            if(page_insert(mm->pgdir,page,addr,perm)==0){
+                // (2) 根据 mm，addr 和 page 建立物理地址与逻辑地址之间的映射
+                if (page_insert(mm->pgdir, page, addr, perm) == 0) {
 ffffffffc0203cc8:	65a2                	ld	a1,8(sp)
 ffffffffc0203cca:	6c88                	ld	a0,24(s1)
 ffffffffc0203ccc:	86ca                	mv	a3,s2
@@ -7225,18 +7230,19 @@ ffffffffc0203cce:	8622                	mv	a2,s0
 ffffffffc0203cd0:	ce7fd0ef          	jal	ra,ffffffffc02019b6 <page_insert>
 ffffffffc0203cd4:	892a                	mv	s2,a0
 ffffffffc0203cd6:	e93d                	bnez	a0,ffffffffc0203d4c <do_pgfault+0xe4>
-                swap_map_swappable(mm,addr,page,1);
+                    // (3) 设置页面为可交换
+                    swap_map_swappable(mm, addr, page, 1);
 ffffffffc0203cd8:	6622                	ld	a2,8(sp)
 ffffffffc0203cda:	4685                	li	a3,1
 ffffffffc0203cdc:	85a2                	mv	a1,s0
 ffffffffc0203cde:	8526                	mv	a0,s1
 ffffffffc0203ce0:	ab0ff0ef          	jal	ra,ffffffffc0202f90 <swap_map_swappable>
-                page->pra_vaddr = addr;
+                    page->pra_vaddr = addr;
 ffffffffc0203ce4:	67a2                	ld	a5,8(sp)
 ffffffffc0203ce6:	e3a0                	sd	s0,64(a5)
-   }
+    }
 
-   ret = 0;
+    ret = 0;
 failed:
     return ret;
 }
@@ -7247,7 +7253,7 @@ ffffffffc0203cee:	854a                	mv	a0,s2
 ffffffffc0203cf0:	6942                	ld	s2,16(sp)
 ffffffffc0203cf2:	6145                	addi	sp,sp,48
 ffffffffc0203cf4:	8082                	ret
-        perm |= (PTE_R | PTE_W);
+        perm |= (PTE_R | PTE_W);  // 如果 vma 是可写的，设置为可读和可写权限
 ffffffffc0203cf6:	4959                	li	s2,22
 ffffffffc0203cf8:	b75d                	j	ffffffffc0203c9e <do_pgfault+0x36>
         if (pgdir_alloc_page(mm->pgdir, addr, perm) == NULL) {
@@ -7255,7 +7261,7 @@ ffffffffc0203cfa:	6c88                	ld	a0,24(s1)
 ffffffffc0203cfc:	864a                	mv	a2,s2
 ffffffffc0203cfe:	85a2                	mv	a1,s0
 ffffffffc0203d00:	9c1fe0ef          	jal	ra,ffffffffc02026c0 <pgdir_alloc_page>
-   ret = 0;
+    ret = 0;
 ffffffffc0203d04:	4901                	li	s2,0
         if (pgdir_alloc_page(mm->pgdir, addr, perm) == NULL) {
 ffffffffc0203d06:	f16d                	bnez	a0,ffffffffc0203ce8 <do_pgfault+0x80>
@@ -7267,7 +7273,7 @@ ffffffffc0203d10:	baafc0ef          	jal	ra,ffffffffc02000ba <cprintf>
 ffffffffc0203d14:	5971                	li	s2,-4
             goto failed;
 ffffffffc0203d16:	bfc9                	j	ffffffffc0203ce8 <do_pgfault+0x80>
-        cprintf("not valid addr %x, and  can not find it in vma\n", addr);
+        cprintf("not valid addr %x, and cannot find it in vma\n", addr);
 ffffffffc0203d18:	85a2                	mv	a1,s0
 ffffffffc0203d1a:	00002517          	auipc	a0,0x2
 ffffffffc0203d1e:	1e650513          	addi	a0,a0,486 # ffffffffc0205f00 <default_pmm_manager+0xda8>
@@ -7284,7 +7290,7 @@ ffffffffc0203d32:	b88fc0ef          	jal	ra,ffffffffc02000ba <cprintf>
 ffffffffc0203d36:	5971                	li	s2,-4
             goto failed;
 ffffffffc0203d38:	bf45                	j	ffffffffc0203ce8 <do_pgfault+0x80>
-            cprintf("swap_in failed for addr 0x%x\n", addr);
+                cprintf("swap_in failed for addr 0x%x\n", addr);
 ffffffffc0203d3a:	85a2                	mv	a1,s0
 ffffffffc0203d3c:	00002517          	auipc	a0,0x2
 ffffffffc0203d40:	24450513          	addi	a0,a0,580 # ffffffffc0205f80 <default_pmm_manager+0xe28>
@@ -7292,7 +7298,7 @@ ffffffffc0203d44:	b76fc0ef          	jal	ra,ffffffffc02000ba <cprintf>
     ret = -E_NO_MEM;
 ffffffffc0203d48:	5971                	li	s2,-4
 ffffffffc0203d4a:	bf79                	j	ffffffffc0203ce8 <do_pgfault+0x80>
-                cprintf("page_insert failed for addr 0x%x\n", addr);
+                    cprintf("page_insert failed for addr 0x%x\n", addr);
 ffffffffc0203d4c:	85a2                	mv	a1,s0
 ffffffffc0203d4e:	00002517          	auipc	a0,0x2
 ffffffffc0203d52:	20a50513          	addi	a0,a0,522 # ffffffffc0205f58 <default_pmm_manager+0xe00>
