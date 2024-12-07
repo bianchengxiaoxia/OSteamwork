@@ -310,10 +310,22 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     //    6. call wakeup_proc to make the new child process RUNNABLE
     //    7. set ret vaule using child proc's pid
 
-    if(alloc_proc()!= proc)goto fork_out;
-    
-    
+    if(alloc_proc() == NULL){
+        goto fork_out;
+    }
+    proc = alloc_proc();
+    proc->parent = current;
+    if(setup_kstack(proc) !=0){goto bad_fork_cleanup_proc;}
+    if(copy_mm(clone_flags,proc)!=0)goto bad_fork_cleanup_kstack;
+    copy_thread(proc,stack,tf);
 
+    proc->pid = get_pid();
+    nr_process ++;
+    list_add(&proc_list ,&(proc->list_link));//list_add(&proc_list ,&(*proc).list_link);
+    hash_proc(proc);
+    wakeup_proc(proc);
+    ret = proc->pid;
+   
 fork_out:
     return ret;
 
