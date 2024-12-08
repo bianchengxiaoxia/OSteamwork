@@ -9,7 +9,7 @@
 #include <atomic.h>
 
 static inline bool __intr_save(void) {
-    if (read_csr(sstatus) & SSTATUS_SIE) {
+    if (read_csr(sstatus) & SSTATUS_SIE) {#检查当前中断是否使能。
         intr_disable();
         return 1;
     }

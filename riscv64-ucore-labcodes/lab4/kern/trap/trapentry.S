@@ -114,3 +114,4 @@ forkrets:
     # set stack to this new process's trapframe
     move sp, a0
     j __trapret
+#a0 中传递的是新进程的 trapframe 地址。forkrets 会将 sp 指向这个新进程的栈帧数据结构，然后跳转到 __trapret，在那里会恢复新进程的上下文（包括寄存器状态）

@@ -39,3 +39,7 @@ schedule(void) {
     local_intr_restore(intr_flag);
 }
 
+// 该 schedule 函数实现了 调度器 的核心部分：选择一个 可运行 的进程来执行。
+// 它遍历进程链表，找到下一个状态为 PROC_RUNNABLE 的进程。
+// 如果没有找到合适的进程，则默认选择 idleproc 作为下一个进程。
+// 如果找到合适的进程且不是当前进程，则进行进程切换。
