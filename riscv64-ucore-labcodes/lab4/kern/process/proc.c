@@ -196,7 +196,7 @@ proc_run(struct proc_struct *proc) {
             }
             // 切换当前进程为要运行的进程
             current = proc;
-            next->context.sp = next->kstack + KSTACKSIZE;
+            //next->context.sp = next->kstack + KSTACKSIZE;
             // 切换页表，使用新进程的地址空间
             lcr3(proc->cr3);
             switch_to(&(prev->context), &(next->context));
