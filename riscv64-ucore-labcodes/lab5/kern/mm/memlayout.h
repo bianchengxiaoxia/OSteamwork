@@ -34,7 +34,7 @@
  *     UTEXT ---------------> +---------------------------------+ 0x00800000
  *                            |        Invalid Memory (*)       | --/--
  *                            |  - - - - - - - - - - - - - - -  |
- *                            |    User STAB Data (optional)    |
+ *                            |    User STAB Data (optional)    |//符号表
  *     USERBASE, USTAB------> +---------------------------------+ 0x00200000
  *                            |        Invalid Memory (*)       | --/--
  *     0 -------------------> +---------------------------------+ 0x00000000
@@ -45,13 +45,13 @@
  * */
 
 /* All physical memory mapped at this address */
-#define KERNBASE            0xFFFFFFFFC0200000
+#define KERNBASE            0xFFFFFFFFC0200000 //内核虚拟地址的起始点
 #define KMEMSIZE            0x7E00000                  // the maximum amount of physical memory
 #define KERNTOP             (KERNBASE + KMEMSIZE)
 
-#define KERNEL_BEGIN_PADDR 0x80200000
+#define KERNEL_BEGIN_PADDR 0x80200000  //内核的物理起始地址
 #define KERNEL_BEGIN_VADDR 0xFFFFFFFFC0200000
-#define PHYSICAL_MEMORY_END 0x88000000
+#define PHYSICAL_MEMORY_END 0x88000000  //物理地址结束
 /* *
  * Virtual page table. Entry PDX[VPT] in the PD (Page Directory) contains
  * a pointer to the page directory itself, thereby turning the PD into a page
@@ -92,11 +92,18 @@ typedef pte_t swap_entry_t; //the pte can also be a swap entry
  * physical page. In kern/mm/pmm.h, you can find lots of useful functions
  * that convert Page to other data types, such as physical address.
  * */
+/* *
+ * 虚拟页表：页目录（Page Directory）中 PDX[VPT] 条目包含一个指向页目录自身的指针，
+ * 通过这种方式将页目录（PD）变成了一个页表（Page Table）。
+ * 这使得页目录可以映射从 VPT 开始的 4MB 区域中的所有页表项（PTE），
+ * 而这些页表项包含了整个虚拟地址空间的页面映射。
+ * */
+
 struct Page {
-    int ref;                        // page frame's reference counter
+    int ref;                        // page frame's reference counter页面的引用计数
     uint64_t flags;                 // array of flags that describe the status of the page frame
     unsigned int property;          // the num of free block, used in first fit pm manager
-    list_entry_t page_link;         // free list link
+    list_entry_t page_link;         // free list link 空闲页面组成的双向链表
     list_entry_t pra_page_link;     // used for pra (page replace algorithm)
     uintptr_t pra_vaddr;            // used for pra (page replace algorithm)
 };
@@ -107,7 +114,7 @@ struct Page {
 
 #define SetPageReserved(page)       set_bit(PG_reserved, &((page)->flags))
 #define ClearPageReserved(page)     clear_bit(PG_reserved, &((page)->flags))
-#define PageReserved(page)          test_bit(PG_reserved, &((page)->flags))
+#define PageReserved(page)          test_bit(PG_reserved, &((page)->flags))//检查是否
 #define SetPageProperty(page)       set_bit(PG_property, &((page)->flags))
 #define ClearPageProperty(page)     clear_bit(PG_property, &((page)->flags))
 #define PageProperty(page)          test_bit(PG_property, &((page)->flags))

@@ -253,7 +253,7 @@ struct Page *get_page(pde_t *pgdir, uintptr_t la, pte_t **ptep_store) {
 // page_remove_pte - free an Page sturct which is related linear address la
 //                - and clean(invalidate) pte which is related linear address la
 // note: PT is changed, so the TLB need to be invalidate
-static inline void page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
+static inline void page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {//page_remove_pte 是一个内核函数，用于释放与某线性地址（linear address, la）相关联的物理页面，并清空对应的页表项（Page Table Entry, pte）。在修改页表后，函数还会刷新 TLB（Translation Lookaside Buffer），以确保页表修改立即生效。
     if (*ptep & PTE_V) {  //(1) check if this page table entry is
         struct Page *page =
             pte2page(*ptep);  //(2) find corresponding page to pte
@@ -266,10 +266,10 @@ static inline void page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
         tlb_invalidate(pgdir, la);  //(6) flush tlb
     }
 }
-
-void unmap_range(pde_t *pgdir, uintptr_t start, uintptr_t end) {
+//页目录指针，用于表示进程的页表结构。管理虚拟地址到物理地址的映射。
+void unmap_range(pde_t *pgdir, uintptr_t start, uintptr_t end) {//unmap_range 是一个内核函数，用于解除虚拟地址范围 [start, end) 的内存映射。它遍历指定地址范围内的所有页表项（PTE），释放与其关联的物理页面（如果有），并清空相应的页表项。
     assert(start % PGSIZE == 0 && end % PGSIZE == 0);
-    assert(USER_ACCESS(start, end));
+    assert(USER_ACCESS(start, end));//确保位于用户空间
 
     do {
         pte_t *ptep = get_pte(pgdir, start, 0);
@@ -284,7 +284,7 @@ void unmap_range(pde_t *pgdir, uintptr_t start, uintptr_t end) {
     } while (start != 0 && start < end);
 }
 
-void exit_range(pde_t *pgdir, uintptr_t start, uintptr_t end) {
+void exit_range(pde_t *pgdir, uintptr_t start, uintptr_t end) {//exit_range 函数用于清除一个进程的二级页表中指定范围 [start, end) 的虚拟地址映射，并释放相关的页表、页目录和页目录表项。该函数会逐级遍历和释放二级页表结构中的有效条目。
     assert(start % PGSIZE == 0 && end % PGSIZE == 0);
     assert(USER_ACCESS(start, end));
 
@@ -335,6 +335,20 @@ void exit_range(pde_t *pgdir, uintptr_t start, uintptr_t end) {
         d0start = d1start;
     } while (d1start != 0 && d1start < end);
 }
+
+// 逐级遍历二级页表结构：
+
+// 遍历一级页目录中的每个条目（PDE1）。
+// 对于有效的 PDE1，进入二级页目录。
+// 遍历二级页目录中的每个条目（PDE0）。
+// 对于有效的 PDE0，进入页表，检查页表中每个条目（PTE）。
+// 释放资源：
+
+// 如果页表中所有 PTE 都无效，释放页表并清除 PDE0。
+// 如果二级页目录中所有 PDE0 都无效，释放二级页目录并清除 PDE1。
+// 清空页表结构：
+
+// 函数会在地址范围 [start, end) 内，释放所有未被使用的页表和页目录。
 /* copy_range - copy content of memory (start, end) of one process A to another
  * process B
  * @to:    the addr of process B's Page Directory
@@ -370,7 +384,7 @@ int copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end,
             assert(page != NULL);
             assert(npage != NULL);
             int ret = 0;
-            /* LAB5:EXERCISE2 YOUR CODE
+            /* LAB5:EXERCISE2 2212879
              * replicate content of page to npage, build the map of phy addr of
              * nage with the linear addr start
              *
@@ -388,8 +402,10 @@ int copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end,
              * (3) memory copy from src_kvaddr to dst_kvaddr, size is PGSIZE
              * (4) build the map of phy addr of  nage with the linear addr start
              */
-
-
+            void * kva_src = page2kva(page);
+            void * kva_dst = page2kva(npage);
+            memcpy(kva_dst, kva_src, PGSIZE);
+            ret = page_insert(to, npage, start, perm);
             assert(ret == 0);
         }
         start += PGSIZE;
